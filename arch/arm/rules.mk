@@ -244,11 +244,13 @@ MODULE_SRCS += \
 	$(LOCAL_DIR)/arm/cache.c \
 	$(LOCAL_DIR)/arm/debug.c \
 	$(LOCAL_DIR)/arm/ops.S \
-	$(LOCAL_DIR)/arm/exceptions.S \
 	$(LOCAL_DIR)/arm/faults.c \
-	$(LOCAL_DIR)/arm/fpu.c \
 	$(LOCAL_DIR)/arm/mmu.c \
 	$(LOCAL_DIR)/arm/thread.c
+
+MODULE_FLOAT_SRCS += \
+	$(LOCAL_DIR)/arm/exceptions.S \
+	$(LOCAL_DIR)/arm/fpu.c \
 
 MODULE_ARM_OVERRIDE_SRCS := \
 	$(LOCAL_DIR)/arm/arch.c
@@ -309,8 +311,8 @@ MODULE_SRCS += \
 	$(LOCAL_DIR)/arm-m/arch.c \
 	$(LOCAL_DIR)/arm-m/cache.c \
 	$(LOCAL_DIR)/arm-m/exceptions.c \
-	$(LOCAL_DIR)/arm-m/start.c \
 	$(LOCAL_DIR)/arm-m/spin_cycles.c \
+	$(LOCAL_DIR)/arm-m/start.c \
 	$(LOCAL_DIR)/arm-m/thread.c \
 	$(LOCAL_DIR)/arm-m/vectab.c
 
@@ -333,6 +335,8 @@ TOOLCHAIN_PREFIX := $(ARCH_$(ARCH)_TOOLCHAIN_PREFIX)
 $(info TOOLCHAIN_PREFIX = $(TOOLCHAIN_PREFIX))
 
 ARCH_COMPILEFLAGS += $(ARCH_$(ARCH)_COMPILEFLAGS)
+ARCH_COMPILEFLAGS_NOFLOAT :=
+ARCH_COMPILEFLAGS_FLOAT := $(ARCH_$(ARCH)_COMPILEFLAGS_FLOAT)
 
 GLOBAL_COMPILEFLAGS += $(THUMBINTERWORK)
 
