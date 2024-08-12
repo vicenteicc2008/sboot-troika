@@ -6,11 +6,11 @@ on: [ push, pull_request ]
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
-        toolchain-ver: [13.2.0, 7.5.0]
+        toolchain-ver: [14.2.0, 7.5.0]
         debug: [2, 0]
         ubsan: [1, 0]
         project:

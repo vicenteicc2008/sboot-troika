@@ -8,7 +8,6 @@
 #include <platform/qemu-virt.h>
 
 #include <arch.h>
-#include <inttypes.h>
 #include <lk/err.h>
 #include <lk/debug.h>
 #include <lk/trace.h>
@@ -16,7 +15,7 @@
 #include <dev/interrupt/arm_gic.h>
 #include <dev/power/psci.h>
 #include <dev/timer/arm_generic.h>
-#include <dev/uart.h>
+#include <dev/uart/pl011.h>
 #include <dev/virtio.h>
 #include <dev/virtio/net.h>
 #include <lib/fdtwalk.h>
@@ -26,7 +25,6 @@
 #include <platform.h>
 #include <platform/gic.h>
 #include <platform/interrupts.h>
-#include "platform_p.h"
 
 #if WITH_LIB_MINIP
 #include <lib/minip.h>
@@ -63,12 +61,18 @@ struct mmu_initial_mapping mmu_initial_mappings[] = {
 const void *fdt = (void *)KERNEL_BASE;
 
 void platform_early_init(void) {
+    const struct pl011_config uart_config = {
+        .base = UART_BASE,
+        .irq = UART0_INT,
+        .flag = PL011_FLAG_DEBUG_UART,
+    };
+
+    pl011_init_early(0, &uart_config);
+
     /* initialize the interrupt controller */
     arm_gic_init();
 
-    arm_generic_timer_init(ARM_GENERIC_TIMER_PHYSICAL_INT, 0);
-
-    uart_init_early();
+    arm_generic_timer_init(ARM_GENERIC_TIMER_VIRTUAL_INT, 0);
 
     if (LOCAL_TRACE) {
         LTRACEF("dumping FDT at %p\n", fdt);
@@ -80,7 +84,7 @@ void platform_early_init(void) {
 }
 
 void platform_init(void) {
-    uart_init();
+    pl011_init(0);
 
     // start secondary cores
     fdtwalk_setup_cpus_arm(fdt);
@@ -190,16 +194,6 @@ status_t platform_compute_msi_values(unsigned int vector, unsigned int cpu, bool
 }
 
 void platform_halt(platform_halt_action suggested_action, platform_halt_reason reason) {
-    switch (suggested_action) {
-        case HALT_ACTION_SHUTDOWN:
-        case HALT_ACTION_HALT:
-            psci_system_off();
-            break;
-        case HALT_ACTION_REBOOT:
-            psci_system_reset();
-            break;
-    }
-    dprintf(ALWAYS, "HALT: spinning forever... (reason = %d)\n", reason);
-    arch_disable_ints();
-    for (;;);
+    // Use the default halt implementation using psci as the reset and shutdown implementation.
+    platform_halt_default(suggested_action, reason, &psci_system_reset, &psci_system_off);
 }

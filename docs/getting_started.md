@@ -6,25 +6,23 @@
 ```
 mkdir -p lk-work && cd lk-work
 ```
-2- Clone the repo
+2- Clone the repo and change dir to the root
 ```
 git clone https://github.com/littlekernel/lk
-```
-3- Download appropriate toolchain and extract it
-```
-wget https://newos.org/toolchains/riscv64-elf-12.1.0-Linux-x86_64.tar.xz
+cd lk
 
-mkdir -p toolchain
-tar xf riscv64-elf-12.1.0-Linux-x86_64.tar.xz
-cd ..
+```
+3- Download appropriate toolchain
+```
+# Fetches the latest riscv64-elf toolchain for your host.
+scripts/fetch-toolchains.py --prefix riscv64-elf
 ```
 4- Add toolchain to PATH
 ```
-export PATH=$PWD/toolchain/riscv64-elf-12.1.0-Linux-x86_64/bin:$PATH
+export PATH=$PWD/toolchain/riscv64-elf-14.2.0-Linux-x86_64/bin:$PATH
 ```
-5- Change dir to lk to build and find available project
+5- Find available project
 ```
-cd lk
 ls project/*
 ```
 6- E.g pick `qemu-virt-riscv64-test` and build kernel
@@ -33,7 +31,7 @@ make qemu-virt-riscv64-test
 ```
 7- Test kernel with Qemu by using prepared script
 ```
-scripts/do-qemuriscv -6
+scripts/do-qemuriscv -6S
 ```
 
 #### Build A Hello App
@@ -46,7 +44,7 @@ mkdir -p mylk/{project,app} && cd mylk
 5- Configure your main makefile; set your toolchain path and point up your lk main path correctly
 ```
 cat << EOF > makefile
-export PATH := /home/myuser/lk-work/toolchain/riscv64-elf-12.1.0-Linux-x86_64/bin:$(PATH)
+export PATH := /home/myuser/lk-work/toolchain/riscv64-elf-14.2.0-Linux-x86_64/bin:$(PATH)
 -include lk_inc.mk
 LOCAL_DIR := .
 LKMAKEROOT := .
@@ -144,7 +142,7 @@ tree ../ -d -L 1
 ../.
 ├── lk
 ├── mylk
-└── toolchain/riscv64-elf-12.1.0-Linux-x86_64
+└── toolchain/riscv64-elf-14.2.0-Linux-x86_64
 
 ```
 10- Build your project

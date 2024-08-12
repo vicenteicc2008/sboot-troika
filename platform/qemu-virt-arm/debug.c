@@ -7,13 +7,11 @@
  */
 #include <stdarg.h>
 #include <lk/reg.h>
-#include <stdio.h>
 #include <kernel/thread.h>
 #include <dev/uart.h>
 #include <platform/debug.h>
 #include <platform/qemu-virt.h>
 #include <target/debugconfig.h>
-#include <lk/reg.h>
 
 /* DEBUG_UART must be defined to 0 or 1 */
 #if defined(DEBUG_UART) && DEBUG_UART == 0
@@ -32,8 +30,8 @@ void platform_dputc(char c) {
 
 int platform_dgetc(char *c, bool wait) {
     int ret = uart_getc(DEBUG_UART, wait);
-    if (ret == -1)
-        return -1;
+    if (ret < 0)
+        return ret;
     *c = ret;
     return 0;
 }
