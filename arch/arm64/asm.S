@@ -43,37 +43,6 @@ FUNCTION(arm64_context_switch)
 
     ret
 
-FUNCTION(arm64_el3_to_el1)
-    /* set EL2 to 64bit */
-    mrs x0, scr_el3
-    orr x0, x0, #(1<<10)
-    msr scr_el3, x0
-
-    /* set EL1 to 64bit */
-    mov x0, #(1<<31)
-    msr hcr_el2, x0
-
-    /* disable EL2 coprocessor traps */
-    mov x0, #0x33ff
-    msr cptr_el2, x0
-
-    /* disable EL1 FPU traps */
-    mov x0, #(0b11<<20)
-    msr cpacr_el1, x0
-
-    /* set up the EL1 bounce interrupt */
-    mov x0, sp
-    msr sp_el1, x0
-
-    adr x0, .Ltarget
-    msr elr_el3, x0
-
-    mov x0, #((0b1111 << 6) | (0b0101)) /* EL1h runlevel */
-    msr spsr_el3, x0
-    isb
-
-    eret
-
     /* drop from whatever EL we may already be in to EL1.
      * carefully avoids using x0-x3 since this is called from start.S
      * which is trying to preserve them.
@@ -84,7 +53,7 @@ FUNCTION(arm64_elX_to_el1)
     cmp x4, #(0b01 << 2)
     bne .notEL1
     /* Already in EL1 */
-    ret 
+    ret
 
 .notEL1:
     cmp x4, #(0b10 << 2)
@@ -95,6 +64,7 @@ FUNCTION(arm64_elX_to_el1)
     orr x4, x4, #(1<<10)
     msr scr_el3, x4
 
+    /* prep this mode's ELR and SPSR to drop into EL1 */
     adr x4, .Ltarget
     msr elr_el3, x4
 
@@ -103,6 +73,7 @@ FUNCTION(arm64_elX_to_el1)
     b   .confEL1
 
 .inEL2:
+    /* prep this mode's ELR and SPSR to drop into EL1 */
     adr x4, .Ltarget
     msr elr_el2, x4
     mov x4, #((0b1111 << 6) | (0b0101)) /* EL1h runlevel */
@@ -113,13 +84,19 @@ FUNCTION(arm64_elX_to_el1)
     mov x4, #0x33ff
     msr cptr_el2, x4
 
-    /* set EL1 to 64bit */
+    /* set EL1 to 64bit and disable EL2 instruction traps */
     mov x4, #(1<<31)
     msr hcr_el2, x4
 
     /* set up the EL1 bounce interrupt */
     mov x4, sp
     msr sp_el1, x4
+
+    /* make sure MPIDR_EL1 and MIDR_EL1 are set with the proper values */
+    mrs x4, mpidr_el1
+    msr vmpidr_el2, x4
+    mrs x4, midr_el1
+    msr vpidr_el2, x4
 
     isb
     eret
