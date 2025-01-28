@@ -39,6 +39,8 @@
 #include "system_table.h"
 #include "text_protocol.h"
 
+namespace {
+
 constexpr auto EFI_SYSTEM_TABLE_SIGNATURE =
     static_cast<u64>(0x5453595320494249ULL);
 
@@ -56,9 +58,9 @@ template <typename T> void fill(T *data, size_t skip, uint8_t begin = 0) {
   }
 }
 
-static constexpr size_t BIT26 = 1 << 26;
-static constexpr size_t BIT11 = 1 << 11;
-static constexpr size_t BIT10 = 1 << 10;
+constexpr size_t BIT26 = 1 << 26;
+constexpr size_t BIT11 = 1 << 11;
+constexpr size_t BIT10 = 1 << 10;
 
 /**
   Pass in a pointer to an ARM MOVT or MOVW immediate instruciton and
@@ -288,6 +290,7 @@ int load_sections_and_execute(bdev_t *dev,
   table.runtime_service = &runtime_service;
   table.boot_services = &boot_service;
   table.header.signature = EFI_SYSTEM_TABLE_SIGNATURE;
+  table.header.revision = 2 << 16;
   EfiSimpleTextOutputProtocol console_out = get_text_output_protocol();
   table.con_out = &console_out;
   table.configuration_table =
@@ -297,6 +300,8 @@ int load_sections_and_execute(bdev_t *dev,
   constexpr size_t kStackSize = 8 * 1024ul * 1024;
   auto stack = reinterpret_cast<char *>(alloc_page(kStackSize, 23));
   memset(stack, 0, kStackSize);
+  printf("Calling kernel with stack [%p, %p]\n", stack,
+         stack + kStackSize - 1);
   return call_with_stack(stack + kStackSize, entry, image_base, &table);
 }
 
@@ -306,7 +311,10 @@ int load_pe_file(const char *blkdev) {
     printf("error opening block device %s\n", blkdev);
     return -1;
   }
-  DEFER { bio_close(dev); };
+  DEFER {
+    bio_close(dev);
+    dev = nullptr;
+  };
   constexpr size_t kBlocKSize = 4096;
 
   lk_time_t t = current_time();
@@ -366,3 +374,5 @@ int cmd_uefi_load(int argc, const console_cmd_args *argv) {
 STATIC_COMMAND_START
 STATIC_COMMAND("uefi_load", "load UEFI application and run it", &cmd_uefi_load)
 STATIC_COMMAND_END(uefi);
+
+} // namespace

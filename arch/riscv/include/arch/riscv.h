@@ -134,7 +134,8 @@
 #define RISCV_EXCEPTION_STORE_PAGE_FAULT    15
 
 #ifndef ASSEMBLY
-#define __ASM_STR(x)    #x
+#define ___ASM_STR(x)    #x
+#define __ASM_STR(x)    ___ASM_STR(x)
 
 __BEGIN_CDECLS
 
@@ -180,7 +181,7 @@ __BEGIN_CDECLS
 
 #define riscv_csr_write(csr, val) \
 ({ \
-    ulong __val = (ulong)val; \
+    ulong __val = (ulong)(val); \
     __asm__ volatile( \
         "csrw   " __ASM_STR(csr) ", %0" \
         :: "rK" (__val) \
