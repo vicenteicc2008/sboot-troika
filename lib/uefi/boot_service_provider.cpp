@@ -30,7 +30,6 @@
 #include <uefi/protocols/loaded_image_protocol.h>
 #include <uefi/types.h>
 
-#include "arch/defines.h"
 #include "blockio2_protocols.h"
 #include "blockio_protocols.h"
 #include "events.h"
@@ -112,23 +111,6 @@ EfiStatus locate_protocol(const EfiGuid *protocol, void *registration,
   return UNSUPPORTED;
 }
 
-EfiStatus allocate_pages(EfiAllocatorType type, EfiMemoryType memory_type,
-                         size_t pages, EfiPhysicalAddr *memory) {
-  if (memory == nullptr) {
-    return INVALID_PARAMETER;
-  }
-  if (type == ALLOCATE_MAX_ADDRESS && *memory < 0xFFFFFFFF) {
-    printf("allocate_pages(%d, %d, %zu, 0x%llx) unsupported\n", type,
-           memory_type, pages, *memory);
-    return UNSUPPORTED;
-  }
-  *memory = reinterpret_cast<EfiPhysicalAddr>(alloc_page(pages * PAGE_SIZE));
-  if (*memory == 0) {
-    return OUT_OF_RESOURCES;
-  }
-  return SUCCESS;
-}
-
 EfiStatus uninstall_multiple_protocol_interfaces(EfiHandle handle, ...) {
   printf("%s is unsupported\n", __FUNCTION__);
   return UNSUPPORTED;
@@ -174,48 +156,6 @@ void set_mem(void *buf, size_t len, uint8_t val) { memset(buf, val, len); }
 EfiTpl raise_tpl(EfiTpl new_tpl) {
   printf("%s is called %zu\n", __FUNCTION__, new_tpl);
   return APPLICATION;
-}
-
-const char *GetImageType(const char16_t *ImageType) {
-  if (memcmp(ImageType, GBL_IMAGE_TYPE_OS_LOAD,
-             sizeof(GBL_IMAGE_TYPE_OS_LOAD)) == 0) {
-    return "os_load";
-  } else if (memcmp(ImageType, GBL_IMAGE_TYPE_FASTBOOT,
-                    sizeof(GBL_IMAGE_TYPE_FASTBOOT)) == 0) {
-    return "fastboot";
-  } else if (memcmp(ImageType, GBL_IMAGE_TYPE_PVMFW_DATA,
-                    sizeof(GBL_IMAGE_TYPE_PVMFW_DATA)) == 0) {
-    return "pvmfw_data";
-  }
-  return "unknown";
-}
-template <typename T>
-T clamp(T n, T lower, T upper) {
-  if (n < lower) {
-    return lower;
-  }
-  if (n > upper) {
-    return upper;
-  }
-  return n;
-}
-
-EfiStatus get_buffer(struct GblEfiImageLoadingProtocol *self,
-                     const GblEfiImageInfo *ImageInfo,
-                     GblEfiImageBuffer *Buffer) {
-  printf("%s(%s, %lu)\n", __FUNCTION__, GetImageType(ImageInfo->ImageType),
-         ImageInfo->SizeBytes);
-
-  // Allow maximum of 128MB buffer
-  const size_t buffer_size =
-      clamp(Buffer->SizeBytes, PAGE_SIZE, 128ul * 1024 * 1024);
-  Buffer->Memory = alloc_page(buffer_size);
-  if (Buffer->Memory == nullptr) {
-    return OUT_OF_RESOURCES;
-  }
-
-  Buffer->SizeBytes = buffer_size;
-  return SUCCESS;
 }
 
 EfiStatus get_verify_partitions(struct GblEfiImageLoadingProtocol *self,
@@ -298,6 +238,8 @@ EfiStatus open_protocol(EfiHandle handle, const EfiGuid *protocol, void **intf,
       return OUT_OF_RESOURCES;
     }
     image_loading->revision = GBL_EFI_IMAGE_LOADING_PROTOCOL_REVISION;
+    image_loading->get_buffer = get_buffer;
+    image_loading->get_verify_partitions = get_verify_partitions;
     *intf = reinterpret_cast<void *>(image_loading);
     return SUCCESS;
   } else if (guid_eq(protocol, EFI_TIMESTAMP_PROTOCOL_GUID)) {
@@ -407,6 +349,10 @@ EfiStatus stall(size_t microseconds) {
   }
 
   return SUCCESS;
+}
+
+EfiStatus free_pages(EfiPhysicalAddr memory, size_t pages) {
+  return ::free_pages(reinterpret_cast<void *>(memory), pages);
 }
 
 } // namespace
