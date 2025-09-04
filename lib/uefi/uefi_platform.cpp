@@ -18,7 +18,10 @@
 #include "uefi_platform.h"
 
 #include <arch/arm64.h>
+#include <lib/watchdog.h>
 #include <libfdt.h>
+#include <lk/err.h>
+#include <lk/trace.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <uefi/protocols/gbl_efi_image_loading_protocol.h>
@@ -27,19 +30,21 @@
 
 #include "defer.h"
 
+#define LOCAL_TRACE 0
+
 __WEAK EFI_STATUS efi_dt_fixup(struct EfiDtFixupProtocol *self, void *fdt,
                                size_t *buffer_size, uint32_t flags) {
   auto offset = fdt_subnode_offset(fdt, 0, "chosen");
   if (offset < 0) {
     printf("Failed to find chosen node %d\n", offset);
-    return SUCCESS;
+    return EFI_STATUS_SUCCESS;
   }
   int length = 0;
   auto prop = fdt_get_property(fdt, offset, "bootargs", &length);
 
   if (prop == nullptr) {
     printf("Failed to find chosen/bootargs prop\n");
-    return SUCCESS;
+    return EFI_STATUS_SUCCESS;
   }
   char *new_prop_data = reinterpret_cast<char *>(malloc(length));
   DEFER {
@@ -56,27 +61,27 @@ __WEAK EFI_STATUS efi_dt_fixup(struct EfiDtFixupProtocol *self, void *fdt,
 
   printf("chosen/bootargs: %d %d \"%s\"\n", ret, length, new_prop_data);
 
-  return SUCCESS;
+  return EFI_STATUS_SUCCESS;
 }
 
 // Generates fixups for the bootconfig built by GBL.
 __WEAK EfiStatus fixup_bootconfig(struct GblEfiOsConfigurationProtocol *self,
-                                  const char *bootconfig, size_t size,
-                                  char *fixup, size_t *fixup_buffer_size) {
-  printf("%s(%p, %s, %lu, %lu)\n", __FUNCTION__, self, bootconfig, size,
-         *fixup_buffer_size);
+                                  const char8_t *bootconfig, size_t size,
+                                  char8_t *fixup, size_t *fixup_buffer_size) {
+  printf("%s(%p, %s, %lu, %lu)\n", __FUNCTION__, self,
+         reinterpret_cast<const char*>(bootconfig), size, *fixup_buffer_size);
   constexpr auto &&to_add =
       "\nandroidboot.fstab_suffix=cf.f2fs."
       "hctr2\nandroidboot.boot_devices=4010000000.pcie";
   const auto final_len = sizeof(to_add);
   if (final_len > *fixup_buffer_size) {
     *fixup_buffer_size = final_len;
-    return OUT_OF_RESOURCES;
+    return EFI_STATUS_OUT_OF_RESOURCES;
   }
   *fixup_buffer_size = final_len;
   memcpy(fixup, to_add, final_len);
 
-  return SUCCESS;
+  return EFI_STATUS_SUCCESS;
 }
 
 // Selects which device trees and overlays to use from those loaded by GBL.
@@ -85,17 +90,17 @@ __WEAK EfiStatus select_device_trees(struct GblEfiOsConfigurationProtocol *self,
                                      size_t num_device_trees) {
   printf("%s(%p, %p %lu)\n", __FUNCTION__, self, device_trees,
          num_device_trees);
-  return UNSUPPORTED;
+  return EFI_STATUS_UNSUPPORTED;
 }
 
 __WEAK EfiStatus exit_boot_services(EfiHandle image_handle, size_t map_key) {
   printf("%s is called\n", __FUNCTION__);
-  return SUCCESS;
+  return EFI_STATUS_SUCCESS;
 }
 
 __WEAK EfiStatus platform_setup_system_table(EfiSystemTable *table) {
   printf("%s is called\n", __FUNCTION__);
-  return SUCCESS;
+  return EFI_STATUS_SUCCESS;
 }
 
 __WEAK uint64_t get_timestamp() {
@@ -104,11 +109,51 @@ __WEAK uint64_t get_timestamp() {
 
 __WEAK EfiStatus get_timestamp_properties(EfiTimestampProperties *properties) {
   if (properties == nullptr) {
-    return INVALID_PARAMETER;
+    return EFI_STATUS_INVALID_PARAMETER;
   }
   properties->frequency = ARM64_READ_SYSREG(cntfrq_el0) & 0xFFFFFFFF;
   properties->end_value = UINT64_MAX;
-  return SUCCESS;
+  return EFI_STATUS_SUCCESS;
+}
+
+__BEGIN_CDECLS
+
+// Redeclaring these as WEAK has two effects:
+//  1. Since we are also including lib/watchdog.h, the compiler would ensure
+//     that the declarations had matching prototypes.
+//  2. If the platform did not provide these methods, then these symbols would
+//     resolve to NULL, and can be checked at runtime.
+extern __WEAK status_t platform_watchdog_init(
+    lk_time_t target_timeout, lk_time_t* recommended_pet_period);
+extern __WEAK void platform_watchdog_set_enabled(bool enabled);
+
+__END_CDECLS
+
+__WEAK EfiStatus set_watchdog_timer(size_t timeout, uint64_t watchdog_code,
+                                    size_t data_size, uint16_t* watchdog_data) {
+  if (platform_watchdog_init == nullptr || platform_watchdog_set_enabled == nullptr) {
+    TRACEF(
+        "unimplemented: platform_watchdog_init = %p "
+        "platform_watchdog_set_enabled = %p\n",
+        platform_watchdog_init, platform_watchdog_set_enabled);
+    return EFI_STATUS_UNSUPPORTED;
+  }
+  if (timeout != 0) {
+    lk_time_t ignored = 0;
+    status_t ret = platform_watchdog_init(timeout * 1000, &ignored);
+    LTRACEF("platform_watchdog_init() ret=%d\n", ret);
+    if (ret == ERR_INVALID_ARGS) {
+      return EFI_STATUS_INVALID_PARAMETER;
+    } else if (ret != NO_ERROR) {
+      return EFI_STATUS_UNSUPPORTED;
+    }
+    platform_watchdog_set_enabled(true);
+    LTRACEF("enabled hw watchdog\n");
+  } else {
+    platform_watchdog_set_enabled(false);
+    LTRACEF("disabled hw watchdog\n");
+  }
+  return EFI_STATUS_SUCCESS;
 }
 
 namespace {
@@ -153,9 +198,9 @@ __WEAK EfiStatus get_buffer(struct GblEfiImageLoadingProtocol *self,
   // OEM for customization.
   Buffer->Memory = alloc_page(buffer_size);
   if (Buffer->Memory == nullptr) {
-    return OUT_OF_RESOURCES;
+    return EFI_STATUS_OUT_OF_RESOURCES;
   }
 
   Buffer->SizeBytes = buffer_size;
-  return SUCCESS;
+  return EFI_STATUS_SUCCESS;
 }
